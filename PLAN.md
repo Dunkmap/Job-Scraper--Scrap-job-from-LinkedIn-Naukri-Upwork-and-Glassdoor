@@ -1,6 +1,6 @@
 # Ultimate Job Scraper: plan
 
-One Apify Actor that searches **LinkedIn, Naukri, Glassdoor and Upwork** in a single run and returns
+One Apify Actor that searches **LinkedIn, Naukri and Glassdoor** in a single run and returns
 one unified, deduplicated dataset. Goals in priority order: **fast, cheap to run, rich and reliable output.**
 
 ---
@@ -22,7 +22,6 @@ one unified, deduplicated dataset. Goals in priority order: **fast, cheap to run
 | `apify-actor-start` | default $0.00005 | automatic |
 | `job-listing` | **$0.60 / 1,000** | each job pushed with basic fields (title, company, location, date, URL, salary if shown) |
 | `job-details` | **+$1.00 / 1,000** | only when `fetchDetails=true` and the full description/criteria were fetched |
-| `upwork-job` | **$1.50 / 1,000** (instead of `job-listing`) | each Upwork job. Upwork probably needs residential proxy, so it costs us more per job. Competitors charge $0.14–$5/1k, mostly $1.50–$2.50. |
 
 This way users who only need basic listings pay little, and we're never out of pocket on the expensive
 detail requests. Target margin: **platform cost ≤ 25% of revenue** for every source.
@@ -52,7 +51,6 @@ documented, and `actor-node` images start faster. That means less billed time on
 | **LinkedIn** | Guest endpoint `linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search` (HTML `<li>` fragments, no login). Details via `/jobs-guest/jobs/api/jobPosting/{id}`. | `start` in steps of 10/25. Filters: `f_TPR` (posted within), `f_WT` (remote), `f_JT` (type), `f_E` (experience), `geoId`, `sortBy=DD`. ~1,000 results/query cap → **split queries** by time window or location to go deeper. | 429s and auth-wall redirects | Session pool and rotating datacenter IPs, back off on 429, per-request residential retry |
 | **Naukri** | Internal JSON API `naukri.com/jobapi/v3/search` (and the job-detail API). Rich JSON in one call: salary, experience, skills, and often the full description. | `pageNo`, ~20 per page | reCAPTCHA (HTTP 406) on "cold" IPs | Warm the session (homepage → cookies → API), Indian proxy group, impit Chrome fingerprint. If still blocked, mint cookies once with a short browser step, then reuse them for HTTP. |
 | **Glassdoor** | Internal GraphQL (BFF) endpoint on each country domain. CSRF token is scraped from page HTML once per session. | Cursor pagination, ~900 per search | Cloudflare and frequent layout changes | Use GraphQL rather than HTML (layout changes don't break JSON), impit TLS fingerprint, sticky sessions, token reuse |
-| **Upwork** | Public job search (visible without login). Recon decides between the internal GraphQL/JSON search that the site's frontend calls (preferred: lean JSON) and the embedded page state (`__NUXT__` data) in search HTML. | Page/offset paging, newest first. Users mostly want *fresh* jobs, so "only new jobs" mode plus short schedules is the main use case. | Cloudflare and cookie/visitor-token expiry; competitors run residential on every request | impit Chrome fingerprint; mint the visitor cookie/token once per session and reuse it; datacenter first, residential fallback. Isolated failure: if Upwork is blocked, the other sources still deliver. |
 
 **Step 0 of the build is a recon spike** for each source. We capture real requests and measure the
 **bytes per job** (compressed), block rate on datacenter vs residential, and the maximum safe
@@ -88,7 +86,7 @@ concurrency. The numbers go into `docs/cost-benchmarks.md` and decide the final 
 {
   "keywords": ["react developer"],            // one or more
   "locations": ["Bangalore", "Remote"],
-  "sources": ["linkedin", "naukri", "upwork", "glassdoor"],
+  "sources": ["linkedin", "naukri", "glassdoor"],
   "maxItemsPerSource": 100,
   "postedWithin": "week",                      // 24h | week | month | any
   "workType": ["remote", "hybrid", "onsite"],
@@ -109,9 +107,6 @@ location, city, country, workType, jobType, experienceLevel, experienceYears {mi
 salary {min,max,currency,period,raw}, skills[], postedAt (ISO), postedAtRaw, applicants,
 easyApply, description (text), descriptionHtml (optional), industry, function, scrapedAt`
 
-Upwork-specific fields (null for other sources): `budget {type: fixed|hourly, min, max, currency}, duration,
-workload, proposals, connectsRequired, client {country, rating, reviews, totalSpent, hires, paymentVerified}`
-
 Every field is always present. Missing values are `null`, never `undefined`, so CSV/Excel exports keep stable columns.
 We'll also add a dataset **views** definition for the Apify Console (overview table, salary view).
 
@@ -127,7 +122,6 @@ src/
   sources/
     linkedin/      search.ts, detail.ts, parse.ts, filters.ts
     naukri/        ...
-    upwork/        ...
     glassdoor/     ...
   schema.ts        unified Job type plus a zod validator
 test/fixtures/     saved real responses → parser unit tests (run offline in CI)
@@ -153,10 +147,9 @@ docs/cost-benchmarks.md
 | **0. Recon** | Capture live requests for each source, measure bytes/job and block rates, write `docs/cost-benchmarks.md` |
 | **1. Core + LinkedIn** | Project skeleton, impit/proxy ladder, PPE charging, unified schema, LinkedIn search and details, tests |
 | **2. Naukri** | Search and detail via the JSON API, session warming and the reCAPTCHA fallback |
-| **3. Upwork** | Search and job details, visitor token/cookie handling, freelance fields (budget, client stats, proposals) |
-| **4. Glassdoor** | GraphQL search and details, CSRF token handling |
-| **5. Polish and publish** | Only-new mode, cross-source dedupe, query splitting, README/SEO, dataset views, health-check schedule, Store listing |
-| **Later** | Also publish cheap single-source Actors (e.g. "Upwork Jobs Scraper") from the same code, for more Store search hits |
+| **3. Glassdoor** | GraphQL search and details, CSRF token handling |
+| **4. Polish and publish** | Only-new mode, cross-source dedupe, query splitting, README/SEO, dataset views, health-check schedule, Store listing |
+| **Later** | Publish cheap single-source Actors (e.g. "Naukri Jobs Scraper") from the same code, for more Store search hits |
 
 ## 10. Risks
 
