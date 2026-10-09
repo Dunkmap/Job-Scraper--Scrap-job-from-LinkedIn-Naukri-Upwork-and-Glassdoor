@@ -1,4 +1,4 @@
-import type { Job, Salary, SourceName } from '../types.js';
+import type { Job, Salary } from '../types.js';
 
 /** Collapse whitespace and trim. Returns null for empty strings. */
 export function clean(text: string | null | undefined): string | null {
@@ -135,9 +135,4 @@ export function makeJob(
         scrapedAt: new Date().toISOString(),
         ...base,
     } as Job;
-}
-
-export function sourceIdOf(id: string): { source: SourceName; sourceJobId: string } {
-    const i = id.indexOf(':');
-    return { source: id.slice(0, i) as SourceName, sourceJobId: id.slice(i + 1) };
 }
