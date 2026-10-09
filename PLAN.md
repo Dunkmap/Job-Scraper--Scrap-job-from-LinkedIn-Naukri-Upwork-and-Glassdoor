@@ -21,7 +21,7 @@ one unified, deduplicated dataset. Goals in priority order: **fast, cheap to run
 |---|---|---|
 | `apify-actor-start` | default $0.00005 | automatic |
 | `job` | **$0.60 / 1,000** | each job pushed with basic fields (title, company, location, date, URL, salary if shown) |
-| `job-with-details` | **$1.60 / 1,000** | each job pushed with full details (description, apply link, criteria) instead of `job` |
+| `job-with-details` | **$1.60 / 1,000** | each job pushed with full details (description, criteria, applicants, Easy Apply flag) instead of `job` |
 
 One event per item (not "basic + extra") so that the SDK's budget limiting stays exact: an item is
 either stored and charged once, or not stored at all.

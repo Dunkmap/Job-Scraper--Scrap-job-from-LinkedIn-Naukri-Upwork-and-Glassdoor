@@ -23,12 +23,13 @@
         "details": {
             "title": "Full details",
             "transformation": {
-                "fields": ["source", "title", "company", "location", "jobType", "experienceLevel", "applicants", "applyUrl", "description"]
+                "fields": ["source", "title", "company", "location", "jobType", "experienceLevel", "applicants", "easyApply", "url", "description"]
             },
             "display": {
                 "component": "table",
                 "properties": {
-                    "applyUrl": { "label": "Apply", "format": "link" },
+                    "easyApply": { "label": "Easy Apply", "format": "boolean" },
+                    "url": { "label": "Link", "format": "link" },
                     "description": { "label": "Description", "format": "text" }
                 }
             }

@@ -15,7 +15,8 @@ const input: Input = {
     locations: (raw.locations?.length ? raw.locations : ['']).map((l) => l.trim()),
     sources: raw.sources?.length ? raw.sources : ['linkedin', 'naukri', 'glassdoor'],
     maxItemsPerSource: raw.maxItemsPerSource ?? 100,
-    postedWithin: raw.postedWithin ?? 'any',
+    // LinkedIn ignores newest-first sorting without a date filter, so "any" returns year-old jobs first.
+    postedWithin: raw.postedWithin ?? 'month',
     workType: raw.workType ?? [],
     jobType: raw.jobType ?? [],
     experienceLevel: raw.experienceLevel ?? [],

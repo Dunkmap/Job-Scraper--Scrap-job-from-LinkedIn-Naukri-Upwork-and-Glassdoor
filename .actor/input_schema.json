@@ -45,7 +45,8 @@
             "editor": "select",
             "enum": ["24h", "week", "month", "any"],
             "enumTitles": ["Last 24 hours", "Last week", "Last month", "Any time"],
-            "default": "any"
+            "description": "Newest jobs come first. With \"Any time\", LinkedIn returns results in its own order, often including jobs months or a year old.",
+            "default": "month"
         },
         "workType": {
             "title": "Work type",
@@ -79,7 +80,7 @@
         "fetchDetails": {
             "title": "Get full job details",
             "type": "boolean",
-            "description": "Adds the full description, apply link, applicant count, seniority, industry and more. Priced as a detailed job.",
+            "description": "Adds the full description, applicant count, seniority, employment type, industry, salary (when shown) and Easy Apply flag. Priced as a detailed job.",
             "default": false,
             "sectionCaption": "Output options"
         },
