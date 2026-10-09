@@ -68,3 +68,16 @@ describe('parseDetail', () => {
         expect(full.description).toContain('• React');
     });
 });
+
+describe('parseDetail apply type', () => {
+    // Trimmed from live guest detail fragments (2026-10-09): no applyUrl, only the button's tracking name.
+    const ONSITE = '<button data-tracking-control-name="public_jobs_apply-link-onsite">Easy Apply</button>';
+    const OFFSITE = '<div data-impression-id="public_jobs_apply-link-offsite_contextual-sign-in-modal"></div>';
+
+    it('detects Easy Apply and offsite apply without an apply URL', () => {
+        const [job] = parseSearch(SEARCH_HTML, query, input);
+        expect(parseDetail(ONSITE, job!)).toMatchObject({ easyApply: true, applyUrl: null });
+        expect(parseDetail(OFFSITE, job!)).toMatchObject({ easyApply: false, applyUrl: null });
+        expect(parseDetail('<div></div>', job!).easyApply).toBeNull();
+    });
+});

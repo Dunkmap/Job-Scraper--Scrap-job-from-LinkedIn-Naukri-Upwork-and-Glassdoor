@@ -10,9 +10,8 @@ import type { Source, SourceContext } from './source.js';
  * LinkedIn's logged-out ("guest") endpoints. They return small HTML fragments instead of full
  * pages: ~10 job cards per search request, and one fragment per job detail.
  *
- * NOTE: selectors below follow LinkedIn's public guest markup but have NOT yet been verified
- * against live responses from this project (network access pending). Phase 0 recon will
- * capture real fixtures into test/fixtures/linkedin/ and confirm or fix them.
+ * Selectors verified against live guest responses in Phase 0 recon (2026-10-09). Guest detail
+ * pages no longer include the external apply URL or the "Job function" criterion.
  */
 const SEARCH_URL = 'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search';
 const DETAIL_URL = 'https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/';
@@ -117,6 +116,11 @@ export function parseDetail(html: string, job: Job): Job {
         } catch { applyUrl = applyRaw; }
     }
 
+    // Guests no longer get the external URL; the apply button's tracking name still tells
+    // "onsite" (Easy Apply) from "offsite" (company site).
+    const onsite = $('[data-tracking-control-name="public_jobs_apply-link-onsite"]').length > 0;
+    const offsite = $('[data-tracking-control-name^="public_jobs_apply-link-offsite"], [data-impression-id^="public_jobs_apply-link-offsite"]').length > 0;
+
     const applicantsText = clean($('.num-applicants__caption').text()) ?? clean($('figcaption.num-applicants__caption').text());
     const salary = parseSalary($('.compensation__salary').text()) ?? job.salary;
 
@@ -127,7 +131,7 @@ export function parseDetail(html: string, job: Job): Job {
         description,
         descriptionHtml,
         applyUrl,
-        easyApply: applyUrl ? false : job.easyApply,
+        easyApply: onsite ? true : applyUrl || offsite ? false : job.easyApply,
         applicants: parseCount(applicantsText),
         salary,
         experienceLevel: criteria['seniority level'] ?? null,
