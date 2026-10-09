@@ -1,0 +1,37 @@
+{
+    "actorSpecification": 1,
+    "views": {
+        "overview": {
+            "title": "Overview",
+            "transformation": {
+                "fields": ["source", "title", "company", "location", "workType", "salary", "postedAt", "url"]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "source": { "label": "Site" },
+                    "title": { "label": "Title" },
+                    "company": { "label": "Company" },
+                    "location": { "label": "Location" },
+                    "workType": { "label": "Work type" },
+                    "salary": { "label": "Salary", "format": "object" },
+                    "postedAt": { "label": "Posted", "format": "date" },
+                    "url": { "label": "Link", "format": "link" }
+                }
+            }
+        },
+        "details": {
+            "title": "Full details",
+            "transformation": {
+                "fields": ["source", "title", "company", "location", "jobType", "experienceLevel", "applicants", "applyUrl", "description"]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "applyUrl": { "label": "Apply", "format": "link" },
+                    "description": { "label": "Description", "format": "text" }
+                }
+            }
+        }
+    }
+}

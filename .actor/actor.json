@@ -1,0 +1,16 @@
+{
+    "actorSpecification": 1,
+    "name": "ultimate-job-scraper",
+    "title": "Ultimate Job Scraper: LinkedIn, Naukri, Glassdoor",
+    "description": "Scrape jobs from LinkedIn, Naukri and Glassdoor in one run. Fast, no login, one clean output format, duplicates removed, and an 'only new jobs' mode for scheduled runs.",
+    "version": "0.1",
+    "buildTag": "latest",
+    "minMemoryMbytes": 256,
+    "maxMemoryMbytes": 1024,
+    "defaultMemoryMbytes": 256,
+    "input": "./input_schema.json",
+    "storages": {
+        "dataset": "./dataset_schema.json"
+    },
+    "dockerfile": "../Dockerfile"
+}

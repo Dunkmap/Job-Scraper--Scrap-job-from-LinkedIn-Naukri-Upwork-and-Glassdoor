@@ -1,0 +1,27 @@
+{
+  "name": "ultimate-job-scraper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fast, low-cost job scraper for LinkedIn, Naukri and Glassdoor (Apify Actor)",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "start:dev": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "apify": "^3.7.2",
+    "cheerio": "^1.2.0",
+    "impit": "^0.14.5",
+    "tough-cookie": "^6.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
+  }
+}

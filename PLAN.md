@@ -20,9 +20,11 @@ one unified, deduplicated dataset. Goals in priority order: **fast, cheap to run
 | Event | Price | When charged |
 |---|---|---|
 | `apify-actor-start` | default $0.00005 | automatic |
-| `job-listing` | **$0.60 / 1,000** | each job pushed with basic fields (title, company, location, date, URL, salary if shown) |
-| `job-details` | **+$1.00 / 1,000** | only when `fetchDetails=true` and the full description/criteria were fetched |
+| `job` | **$0.60 / 1,000** | each job pushed with basic fields (title, company, location, date, URL, salary if shown) |
+| `job-with-details` | **$1.60 / 1,000** | each job pushed with full details (description, apply link, criteria) instead of `job` |
 
+One event per item (not "basic + extra") so that the SDK's budget limiting stays exact: an item is
+either stored and charged once, or not stored at all.
 This way users who only need basic listings pay little, and we're never out of pocket on the expensive
 detail requests. Target margin: **platform cost ≤ 25% of revenue** for every source.
 
@@ -30,7 +32,8 @@ detail requests. Target margin: **platform cost ≤ 25% of revenue** for every s
 
 ## 2. Tech stack
 
-- **TypeScript + Apify SDK v3 + Crawlee** (`BasicCrawler` / `HttpCrawler`), Node 22.
+- **TypeScript + Apify SDK v3**, Node 22. **No Crawlee RequestQueue**: every queue operation is a billed storage
+  API call, and our pagination is fully predictable, so a small in-memory loop with a semaphore is faster and cheaper.
 - **`impit`** HTTP client (Apify's Rust client that matches browser TLS fingerprints, and the successor to
   got-scraping). It gets past most fingerprint-based blocking without a browser.
 - **cheerio** for HTML fragments (LinkedIn). JSON APIs are parsed directly (Naukri, Glassdoor).
