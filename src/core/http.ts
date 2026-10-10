@@ -24,6 +24,8 @@ export interface HttpStats {
     requests: number;
     failures: number;
     blocked: number;
+    /** Session warm-up requests, counted separately so they are visible in the cost numbers. */
+    warmups: number;
     bytes: Record<ProxyTier, number>;
     requestsByTier: Record<ProxyTier, number>;
 }
@@ -44,9 +46,21 @@ export interface HttpClientOptions {
     maxSessionUses?: number;
     /** Number of parallel sessions (IPs) per proxy tier. Requests are spread across them. */
     poolSize?: number;
+    /** Tier to try first. Defaults to the user's (cheap) proxy; see Source.preferResidential. */
+    startTier?: ProxyTier;
+    /**
+     * Cheap URL fetched once when a session is created, to pick up the cookies a
+     * Cloudflare-fronted site expects before the first real request. Keep it small: it is paid
+     * for on every session. Glassdoor uses robots.txt (~2 KB gzip).
+     */
+    warmUrl?: string;
     maxRetries?: number;
     timeoutMs?: number;
-    /** Keep cookies per session (needed by sites that set tokens on the first page). */
+    /**
+     * Keep cookies per session. On by default: Cloudflare-fronted sites (Glassdoor) hand out a
+     * __cf_bm cookie on the first response and 403 every later request without it. All the
+     * block-rate numbers in docs/cost-benchmarks.md were measured with a cookie jar in place.
+     */
     cookies?: boolean;
     headers?: Record<string, string>;
 }
@@ -60,31 +74,72 @@ export interface HttpClientOptions {
  */
 export class HttpClient {
     readonly stats: HttpStats = {
-        requests: 0, failures: 0, blocked: 0,
+        requests: 0, failures: 0, blocked: 0, warmups: 0,
         bytes: { user: 0, residential: 0 },
         requestsByTier: { user: 0, residential: 0 },
     };
 
     private pools: Record<ProxyTier, Session[]> = { user: [], residential: [] };
+    /** Sessions pinned to a caller key, e.g. one per Glassdoor search query. */
+    private sticky = new Map<string, Session>();
     private sessionCounter = 0;
+    /*
+     * Apify Proxy pins one IP per session id, so a deterministic id such as
+     * "glassdoor_residential_1" hands every run the SAME IPs - including the ones the previous
+     * run got blocked on. Measured: a Glassdoor run inherited burned IPs and was blocked on
+     * 8/8 requests, while identical code using random ids was clean. Scope ids to this run.
+     */
+    private readonly runTag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    private readonly loggedProxy = new Set<ProxyTier>();
 
     constructor(private readonly opts: HttpClientOptions) {}
 
     private async newSession(tier: ProxyTier): Promise<Session> {
-        const id = `${this.opts.name}_${tier}_${++this.sessionCounter}`;
+        const id = `${this.opts.name}_${tier}_${this.runTag}_${++this.sessionCounter}`;
         const proxyConf = tier === 'residential' ? this.opts.residentialProxy : this.opts.proxy;
         const proxyUrl = proxyConf ? await proxyConf.newUrl(id) : undefined;
         const impit = new Impit({
             browser: 'chrome',
             proxyUrl,
             timeout: this.opts.timeoutMs ?? 20_000,
-            cookieJar: this.opts.cookies ? new CookieJar() : undefined,
+            cookieJar: this.opts.cookies === false ? undefined : new CookieJar(),
             headers: this.opts.headers,
         });
-        return { id, tier, impit, uses: 0 };
+        const session: Session = { id, tier, impit, uses: 0 };
+        if (!this.loggedProxy.has(tier)) {
+            this.loggedProxy.add(tier);
+            // Credentials redacted: we only want to see which proxy groups/country are in play.
+            log.debug(`[${this.opts.name}] ${tier} proxy: ${proxyUrl ? proxyUrl.replace(/:[^:@]*@/, ':<pw>@') : 'none (direct)'}`);
+        }
+        if (this.opts.warmUrl) {
+            // Best effort: a failed warm-up should not fail the real request that follows.
+            try {
+                const res = await impit.fetch(this.opts.warmUrl);
+                const n = (await res.bytes()).byteLength;
+                this.stats.bytes[tier] += n;
+                this.stats.warmups++;
+                log.debug(`[${this.opts.name}] warm-up ${id}: HTTP ${res.status} ${n}B`);
+            } catch (err) {
+                log.debug(`[${this.opts.name}] warm-up ${id} failed: ${(err as Error).message.slice(0, 80)}`);
+            }
+        }
+        return session;
     }
 
-    private async getSession(tier: ProxyTier): Promise<Session> {
+    /**
+     * Session bound to a caller-chosen key, for sites whose pagination lives in the session.
+     * Glassdoor advances its result set per session, so page 2 fetched from a different IP
+     * returns page 1 again (measured) and often a 403.
+     */
+    private async getSession(tier: ProxyTier, key?: string): Promise<Session> {
+        if (key) {
+            const bound = this.sticky.get(`${tier}:${key}`);
+            if (bound && bound.uses < (this.opts.maxSessionUses ?? 5)) return bound;
+            const fresh = await this.newSession(tier);
+            this.sticky.set(`${tier}:${key}`, fresh);
+            this.pools[tier].push(fresh);
+            return fresh;
+        }
         const pool = this.pools[tier];
         // Measured: a LinkedIn guest IP serves only a handful of requests before it starts
         // returning 999/429, so sessions are retired early and replaced with a fresh IP.
@@ -102,6 +157,7 @@ export class HttpClient {
         const pool = this.pools[session.tier];
         const i = pool.indexOf(session);
         if (i >= 0) pool.splice(i, 1);
+        for (const [key, bound] of this.sticky) if (bound === session) this.sticky.delete(key);
     }
 
     /** Run a callback with a session, e.g. to warm cookies before API calls. */
@@ -109,7 +165,7 @@ export class HttpClient {
         return fn((await this.getSession(tier)).impit);
     }
 
-    async fetch(url: string, init: RequestInit = {}): Promise<FetchResult> {
+    async fetch(url: string, init: RequestInit = {}, sessionKey?: string): Promise<FetchResult> {
         const maxRetries = this.opts.maxRetries ?? 3;
         let lastError: unknown;
         let wasBlocked = false;
@@ -121,8 +177,9 @@ export class HttpClient {
              * another block, so once we have seen one we switch. A plain network error is not a
              * block, so that stays on the free tier.
              */
-            const tier: ProxyTier = this.opts.residentialProxy && wasBlocked ? 'residential' : 'user';
-            const session = await this.getSession(tier);
+            const start = this.opts.startTier === 'residential' && this.opts.residentialProxy ? 'residential' : 'user';
+            const tier: ProxyTier = this.opts.residentialProxy && wasBlocked ? 'residential' : start;
+            const session = await this.getSession(tier, sessionKey);
             session.uses++;
             this.stats.requests++;
             this.stats.requestsByTier[tier]++;
@@ -137,7 +194,10 @@ export class HttpClient {
                     this.stats.blocked++;
                     this.retire(session);
                     wasBlocked = true;
-                    throw new BlockedError(`Blocked (${result.status}) on ${tier} proxy: ${url}`);
+                    // Include what the site actually said: a captcha wall, a rate-limit notice and
+                    // a geo block all arrive as 403 but need different fixes.
+                    const why = result.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+                    throw new BlockedError(`Blocked (${result.status}) on ${tier} proxy: ${url}${why ? ` | said: ${why}` : ''}`);
                 }
                 if (result.status >= 500) throw new Error(`HTTP ${result.status}: ${url}`);
                 return result;

@@ -1,11 +1,12 @@
 import { Actor, log } from 'apify';
 import { createProxies, HttpClient } from './core/http.js';
 import { JobSink } from './core/sink.js';
+import { glassdoor } from './sources/glassdoor.js';
 import { linkedin } from './sources/linkedin.js';
 import type { Source } from './sources/source.js';
 import type { Input, SearchQuery, SourceName } from './types.js';
 
-const SOURCES: Partial<Record<SourceName, Source>> = { linkedin };
+const SOURCES: Partial<Record<SourceName, Source>> = { linkedin, glassdoor };
 
 await Actor.init();
 
@@ -13,7 +14,7 @@ const raw = (await Actor.getInput<Partial<Input>>()) ?? {};
 const input: Input = {
     keywords: (raw.keywords ?? []).map((k) => k.trim()).filter(Boolean),
     locations: (raw.locations?.length ? raw.locations : ['']).map((l) => l.trim()),
-    sources: raw.sources?.length ? raw.sources : ['linkedin', 'naukri', 'glassdoor'],
+    sources: raw.sources?.length ? raw.sources : ['linkedin', 'glassdoor'],
     maxItemsPerSource: raw.maxItemsPerSource ?? 100,
     postedWithin: raw.postedWithin ?? 'any',
     workType: raw.workType ?? [],
@@ -46,7 +47,13 @@ const clients: Record<string, HttpClient> = {};
 await Promise.all(active.map(async (name) => {
     const source = SOURCES[name]!;
     const { proxy, residentialProxy } = await createProxies(input.proxyConfiguration, source.residentialCountry);
-    const http = new HttpClient({ name, proxy, residentialProxy, isBlocked: source.isBlocked, headers: { 'accept-language': 'en-US,en;q=0.9' } });
+    const { headers: sourceHeaders, ...httpOptions } = source.httpOptions ?? {};
+    const http = new HttpClient({
+        name, proxy, residentialProxy, isBlocked: source.isBlocked,
+        startTier: source.preferResidential ? 'residential' : 'user',
+        headers: { 'accept-language': 'en-US,en;q=0.9', ...sourceHeaders },
+        ...httpOptions,
+    });
     clients[name] = http;
     try {
         await source.run({ input, sink, http }, queries);

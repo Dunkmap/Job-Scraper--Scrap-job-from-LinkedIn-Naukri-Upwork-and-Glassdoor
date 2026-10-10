@@ -11,7 +11,11 @@
                 "linkedin",
                 "naukri",
                 "glassdoor",
-                "naukri-probe"
+                "naukri-probe",
+                "glassdoor-probe",
+                "glassdoor-paging",
+                "glassdoor-loc",
+                "glassdoor-warm"
             ],
             "default": "linkedin",
             "description": "Which site to probe."

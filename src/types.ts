@@ -1,4 +1,4 @@
-export type SourceName = 'linkedin' | 'naukri' | 'glassdoor';
+export type SourceName = 'linkedin' | 'glassdoor';
 export type PostedWithin = '24h' | 'week' | 'month' | 'any';
 export type WorkType = 'onsite' | 'remote' | 'hybrid';
 export type JobType = 'full-time' | 'part-time' | 'contract' | 'temporary' | 'internship';
@@ -26,6 +26,8 @@ export interface Salary {
     currency: string | null;
     period: 'hour' | 'day' | 'week' | 'month' | 'year' | null;
     raw: string | null;
+    /** Where the figure came from, e.g. "EMPLOYER_PROVIDED" or an estimate. Null when unknown. */
+    source?: string | null;
 }
 
 /**

@@ -15,7 +15,7 @@
         "locations": {
             "title": "Locations",
             "type": "array",
-            "description": "Cities or countries, e.g. \"Bangalore\", \"India\", \"Remote\". Leave empty to search worldwide.",
+            "description": "Cities, states or countries, e.g. \"Bangalore\", \"India\", \"New York\". Leave empty to search worldwide. Glassdoor resolves each name to its own location filter.",
             "editor": "stringList",
             "prefill": [
                 "India"
@@ -31,18 +31,15 @@
                 "type": "string",
                 "enum": [
                     "linkedin",
-                    "naukri",
                     "glassdoor"
                 ],
                 "enumTitles": [
                     "LinkedIn",
-                    "Naukri",
                     "Glassdoor"
                 ]
             },
             "default": [
                 "linkedin",
-                "naukri",
                 "glassdoor"
             ]
         },
