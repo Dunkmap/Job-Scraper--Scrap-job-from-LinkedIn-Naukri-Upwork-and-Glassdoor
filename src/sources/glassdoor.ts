@@ -133,10 +133,14 @@ function parsePay(header: any): Salary | null {
     const min = typeof pay?.p10 === 'number' ? pay.p10 : null;
     const max = typeof pay?.p90 === 'number' ? pay.p90 : null;
     if (min == null && max == null) return null;
-    const unit = period ? `/${period}` : '';
+    // Readable, e.g. "INR 526,500 - INR 1,000,000 per year" rather than "INR526500-INR1000000/year".
+    const money = (n: number) => `${currency ? `${currency} ` : ''}${n.toLocaleString('en-US')}`;
+    const amounts = min != null && max != null && max !== min
+        ? `${money(min)} - ${money(max)}`
+        : money((min ?? max)!);
     return {
         min, max, currency, period,
-        raw: `${currency ?? ''}${min ?? ''}${max != null && max !== min ? ` - ${currency ?? ''}${max}` : ''}${unit}`.trim() || null,
+        raw: `${amounts}${period ? ` per ${period}` : ''}`,
         // Glassdoor marks whether the employer stated the pay or Glassdoor estimated it.
         // Users filtering on salary need to know which, so we pass it through.
         source: header?.salarySource ?? null,

@@ -194,3 +194,79 @@ this traffic is billed at ~$8/GB:
 Still profitable, but it makes Glassdoor ~40× more expensive per job than LinkedIn. Moving to the
 GraphQL endpoint (as planned) should cut this substantially and is the first optimisation to make
 once Glassdoor ships.
+
+---
+
+## 7. Glassdoor, implemented (2026-10-10)
+
+### What it took to get a 200
+
+Glassdoor fingerprints the **request header shape**, not just the TLS handshake. Measured over
+5 repeats each, on fresh residential sessions:
+
+| Headers sent | Success |
+|---|---|
+| impit's bare Chrome profile | **0/5** |
+| `accept-language` only | **0/5** |
+| `accept-language` + `upgrade-insecure-requests: 1` | **4/5** |
+| overriding `accept` with our own value | 0/5 |
+
+So the Actor sends `upgrade-insecure-requests` (a real Chrome navigation header) and never
+overrides `accept`. Two further requirements, each found by a failing run:
+
+- **A cookie jar.** Without one every request 403s. Cookies are now on by default in `HttpClient`.
+- **Residential, pinned to the US.** Datacenter is blocked 100%; unpinned residential exits also
+  returned 403. `robots.txt` (6 KB) warms each new session.
+
+A false lead worth recording: deterministic proxy session ids such as `glassdoor_residential_1`
+make every run reuse the *same* IPs, including ones a previous run got blocked on. Session ids are
+now scoped per run. That was not the cause of the 403s, but it is a real bug.
+
+### The 30-result cap
+
+Glassdoor's GET search returns 30 jobs and **cannot be paginated**. Every one of these returned the
+identical 30 job ids: `?p=2`, `?p=3`, `?pageCursor=<cursor>`, `?p=2&pageCursor=<cursor>`, and the
+SEO `_IP2`/`_IP3`/`_IP4` URLs. The page payload carries opaque `paginationCursors`
+(`[{cursor, pageNumber}]`) and `totalJobsCount` (4,473 for one sample), but those belong to a POST
+against its GraphQL endpoint; `/graph` answers 403 to anything simpler, and `/api/csrftoken` is 404.
+
+The Actor therefore fetches **one page per query and stops**. Before this was understood it fetched
+4 pages and discarded 90 duplicates, wasting ~525 KB gzip (~$0.004) of residential traffic per
+query for zero extra jobs. More Glassdoor results per run currently means more keywords/locations.
+
+Its search is also **session-stateful**: changing a filter param shifts the session's result set, so
+later requests on that session inherit it. That invalidates naive A/B probing of filter params, and
+is why age/work-type/job-type filtering is applied locally from the embedded payload instead of
+through URL params.
+
+### Location
+
+`locKeyword`, `typedLocation` and `locName` are all ignored; the page derives location from the
+proxy IP (`ipLocation` in the payload). What works is Glassdoor's own ids:
+
+```
+GET /autocomplete/location?term=Bangalore&locationTypeFilters=CITY,STATE,COUNTRY
+ -> [{"locationId":2940587,"locationType":"C","locationName":"Bengaluru", ...}]
+GET /Job/jobs.htm?sc.keyword=<kw>&locT=C&locId=2940587
+```
+
+### Measured output (production run, 2 keywords x Bangalore, 139 jobs, 4 s, $0.00286)
+
+**$0.0206 per 1,000 jobs** for the two sources combined. The sources are complementary, which is
+the product's main selling point over single-source competitors:
+
+| Field | LinkedIn (basic, n=80) | Glassdoor (n=59) |
+|---|---|---|
+| title, company, location, url, postedAt | 100% | 100% |
+| description | 0% (needs detail fetch) | **100%** (snippet included free) |
+| salary | 0% | **75%**, with `salary.source` saying employer-provided vs estimated |
+| skills | 0% | **100%** |
+| companyRating | 0% | **86%** |
+| jobFunction | 0% | **100%** |
+| easyApply | 0% (needs detail fetch) | **100%** |
+| jobType | 0% | 49% |
+| activelyHiring / earlyApplicant | **100%** | n/a |
+
+Glassdoor costs ~$0.046 per 1,000 jobs against LinkedIn's $0.0012 (residential, and ~175 KB gzip
+per 30-job page), so it is ~38x more expensive per job while supplying the richer fields. Both stay
+far inside the margin target.

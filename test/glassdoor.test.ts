@@ -120,3 +120,13 @@ describe('buildSearchUrl', () => {
         expect(url.searchParams.has('p')).toBe(false);
     });
 });
+
+describe('salary formatting', () => {
+    const rows = extractListings(html);
+    const jobs = rows.map((r) => mapListing(r, query, Date.parse('2026-10-10T00:00:00.000Z')));
+
+    it('writes a readable raw string with separators', () => {
+        const paid = jobs.find((j) => j?.salary);
+        expect(paid!.salary!.raw).toBe('USD 75 - USD 150 per hour');
+    });
+});

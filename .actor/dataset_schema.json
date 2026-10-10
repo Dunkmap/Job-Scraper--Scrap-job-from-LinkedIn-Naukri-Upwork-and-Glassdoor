@@ -4,32 +4,93 @@
         "overview": {
             "title": "Overview",
             "transformation": {
-                "fields": ["source", "title", "company", "location", "workType", "salary", "postedAt", "url"]
+                "fields": [
+                    "source",
+                    "title",
+                    "company",
+                    "companyRating",
+                    "location",
+                    "workType",
+                    "salary",
+                    "postedAt",
+                    "url"
+                ]
             },
             "display": {
                 "component": "table",
                 "properties": {
-                    "source": { "label": "Site" },
-                    "title": { "label": "Title" },
-                    "company": { "label": "Company" },
-                    "location": { "label": "Location" },
-                    "workType": { "label": "Work type" },
-                    "salary": { "label": "Salary", "format": "object" },
-                    "postedAt": { "label": "Posted", "format": "date" },
-                    "url": { "label": "Link", "format": "link" }
+                    "source": {
+                        "label": "Site"
+                    },
+                    "title": {
+                        "label": "Title"
+                    },
+                    "company": {
+                        "label": "Company"
+                    },
+                    "location": {
+                        "label": "Location"
+                    },
+                    "workType": {
+                        "label": "Work type"
+                    },
+                    "salary": {
+                        "label": "Salary",
+                        "format": "object"
+                    },
+                    "postedAt": {
+                        "label": "Posted",
+                        "format": "date"
+                    },
+                    "url": {
+                        "label": "Link",
+                        "format": "link"
+                    },
+                    "companyRating": {
+                        "label": "Rating"
+                    }
                 }
             }
         },
         "details": {
             "title": "Full details",
             "transformation": {
-                "fields": ["source", "title", "company", "location", "jobType", "experienceLevel", "applicants", "applyUrl", "description"]
+                "fields": [
+                    "source",
+                    "title",
+                    "company",
+                    "location",
+                    "jobType",
+                    "experienceLevel",
+                    "experienceYears",
+                    "skills",
+                    "applicants",
+                    "easyApply",
+                    "applyUrl",
+                    "description"
+                ]
             },
             "display": {
                 "component": "table",
                 "properties": {
-                    "applyUrl": { "label": "Apply", "format": "link" },
-                    "description": { "label": "Description", "format": "text" }
+                    "applyUrl": {
+                        "label": "Apply",
+                        "format": "link"
+                    },
+                    "description": {
+                        "label": "Description",
+                        "format": "text"
+                    },
+                    "skills": {
+                        "label": "Skills"
+                    },
+                    "experienceYears": {
+                        "label": "Experience (yrs)",
+                        "format": "object"
+                    },
+                    "easyApply": {
+                        "label": "Easy apply"
+                    }
                 }
             }
         }
