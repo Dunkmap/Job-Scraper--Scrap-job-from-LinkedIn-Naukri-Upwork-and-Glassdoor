@@ -1,0 +1,12 @@
+{
+  "name": "job-scraper-recon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node main.mjs" },
+  "dependencies": {
+    "apify": "^3.7.2",
+    "impit": "^0.14.5",
+    "tough-cookie": "^6.0.2"
+  }
+}

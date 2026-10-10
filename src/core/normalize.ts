@@ -76,6 +76,28 @@ export function parseExperienceYears(raw: string | null | undefined): Job['exper
     return null;
 }
 
+/**
+ * Pull an experience range out of free text, e.g. "1 - 2 year experience", "3+ years".
+ * Deliberately conservative: the numbers must sit next to the word year/yr, so that
+ * "2-3 days" or "React 18" never become an experience range.
+ */
+export function experienceFromText(raw: string | null | undefined): Job['experienceYears'] {
+    const text = clean(raw);
+    if (!text) return null;
+    const range = text.match(/\b(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s*\+?\s*(?:year|yr)s?\b/i);
+    if (range) {
+        const min = Number(range[1]);
+        const max = Number(range[2]);
+        if (max >= min && max <= 50) return { min, max };
+    }
+    const open = text.match(/\b(\d{1,2})\s*\+\s*(?:year|yr)s?\b/i)
+        ?? text.match(/\b(?:minimum|min\.?|at least|atleast)\s*(?:of\s*)?(\d{1,2})\s*\+?\s*(?:year|yr)s?\b/i);
+    if (open) return { min: Number(open[1]), max: null };
+    const exact = text.match(/\b(\d{1,2})\s*(?:year|yr)s?\s*(?:of\s*)?(?:relevant\s*)?experience\b/i);
+    if (exact) return { min: Number(exact[1]), max: null };
+    return null;
+}
+
 /** Convert "3 days ago", "1 week ago", "30+ days ago", "just now" into an ISO date (relative to `now`). */
 export function parseRelativeDate(raw: string | null | undefined, now = new Date()): string | null {
     const text = clean(raw)?.toLowerCase();
@@ -127,6 +149,8 @@ export function makeJob(
         postedAtRaw: null,
         applicants: null,
         easyApply: null,
+        activelyHiring: null,
+        earlyApplicant: null,
         description: null,
         descriptionHtml: null,
         industry: null,

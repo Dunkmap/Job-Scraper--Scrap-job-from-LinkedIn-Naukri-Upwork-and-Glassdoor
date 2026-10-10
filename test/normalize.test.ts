@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { crossSourceKey, parseExperienceYears, parseRelativeDate, parseSalary } from '../src/core/normalize.js';
+import { crossSourceKey, experienceFromText, parseExperienceYears, parseRelativeDate, parseSalary } from '../src/core/normalize.js';
 
 describe('parseSalary', () => {
     it('parses USD yearly ranges', () => {
@@ -42,5 +42,21 @@ describe('crossSourceKey', () => {
         const a = crossSourceKey({ title: 'React Developer', company: 'Acme Pvt. Ltd', location: 'Bengaluru, Karnataka, India' });
         const b = crossSourceKey({ title: 'react developer', company: 'ACME Pvt Ltd', location: 'Bengaluru' });
         expect(a).toBe(b);
+    });
+});
+
+describe('experienceFromText', () => {
+    it('reads ranges and open-ended requirements stated in a description', () => {
+        expect(experienceFromText('1 - 2 year experience, immediate joiner')).toEqual({ min: 1, max: 2 });
+        expect(experienceFromText('5+ years of React')).toEqual({ min: 5, max: null });
+        expect(experienceFromText('Minimum 3 years experience')).toEqual({ min: 3, max: null });
+        expect(experienceFromText('2 years of relevant experience')).toEqual({ min: 2, max: null });
+    });
+    it('ignores numbers that are not about experience', () => {
+        // The guard that keeps us from shipping nonsense ranges.
+        expect(experienceFromText('Available 2-3 days per week')).toBeNull();
+        expect(experienceFromText('Experience with React 18 and Node 22')).toBeNull();
+        expect(experienceFromText('Salary 10-15 LPA')).toBeNull();
+        expect(experienceFromText('')).toBeNull();
     });
 });

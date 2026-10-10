@@ -1,0 +1,66 @@
+{
+    "title": "Recon input",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "source": {
+            "title": "Source",
+            "type": "string",
+            "editor": "select",
+            "enum": [
+                "linkedin",
+                "naukri",
+                "glassdoor"
+            ],
+            "default": "linkedin",
+            "description": "Which site to probe."
+        },
+        "keywords": {
+            "title": "Keywords",
+            "type": "string",
+            "editor": "textfield",
+            "default": "react developer",
+            "description": "Search keywords to probe with."
+        },
+        "location": {
+            "title": "Location",
+            "type": "string",
+            "editor": "textfield",
+            "default": "India",
+            "description": "Location to probe with."
+        },
+        "requests": {
+            "title": "Requests",
+            "type": "integer",
+            "default": 12,
+            "description": "How many search requests to send in total."
+        },
+        "concurrency": {
+            "title": "Concurrency",
+            "type": "integer",
+            "default": 4,
+            "description": "How many requests in flight at once."
+        },
+        "sessions": {
+            "title": "Distinct proxy sessions (IPs)",
+            "type": "integer",
+            "default": 6,
+            "description": "How many distinct proxy sessions (IPs) to spread requests over."
+        },
+        "warm": {
+            "title": "Warm cookies on the public page first",
+            "type": "boolean",
+            "default": true,
+            "description": "Fetch the public page first to pick up cookies before calling the API."
+        },
+        "proxyConfiguration": {
+            "title": "Proxy",
+            "type": "object",
+            "editor": "proxy",
+            "default": {
+                "useApifyProxy": true
+            },
+            "description": "Proxy used for the \"user\" tier. Residential is probed separately."
+        }
+    }
+}

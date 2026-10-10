@@ -54,6 +54,10 @@ export interface Job {
     postedAtRaw: string | null;
     applicants: number | null;
     easyApply: boolean | null;
+    /** Company is marked "Actively Hiring" on the listing. */
+    activelyHiring: boolean | null;
+    /** Listing is marked "Be an early applicant" (few applicants so far). */
+    earlyApplicant: boolean | null;
     description: string | null;
     descriptionHtml: string | null;
     industry: string | null;

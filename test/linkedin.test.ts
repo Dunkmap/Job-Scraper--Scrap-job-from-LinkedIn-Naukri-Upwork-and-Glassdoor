@@ -1,6 +1,15 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildSearchUrl, parseDetail, parseSearch } from '../src/sources/linkedin.js';
 import type { Input } from '../src/types.js';
+
+/*
+ * These run against REAL responses captured from LinkedIn's guest endpoints
+ * (test/fixtures/linkedin/, refreshed with `node tools/recon-linkedin.mjs`).
+ * If LinkedIn changes its markup, these fail in CI instead of the Actor silently
+ * returning rows of nulls to paying users.
+ */
+const fixture = (name: string) => readFileSync(`test/fixtures/linkedin/${name}.html`, 'utf8');
 
 const input: Input = {
     keywords: ['react developer'], locations: ['India'], sources: ['linkedin'], maxItemsPerSource: 10,
@@ -17,54 +26,103 @@ describe('buildSearchUrl', () => {
         expect(url.searchParams.get('f_JT')).toBe('F,C');
         expect(url.searchParams.get('f_E')).toBe('2');
         expect(url.searchParams.get('start')).toBe('20');
+        expect(url.searchParams.get('sortBy')).toBe('DD');
     });
 });
 
-// SYNTHETIC markup modelled on LinkedIn's guest fragments. Replace with real captured
-// fixtures (test/fixtures/linkedin/) during Phase 0 recon.
-const SEARCH_HTML = `
-<li><div class="base-card base-search-card job-search-card" data-entity-urn="urn:li:jobPosting:4012345678">
-  <a class="base-card__full-link" href="https://in.linkedin.com/jobs/view/react-developer-at-acme-4012345678?position=1&refId=x"></a>
-  <img data-delayed-url="https://media.licdn.com/logo.png">
-  <h3 class="base-search-card__title"> React Developer </h3>
-  <h4 class="base-search-card__subtitle"><a href="https://in.linkedin.com/company/acme?trk=x">Acme</a></h4>
-  <span class="job-search-card__location">Bengaluru, Karnataka, India</span>
-  <span class="job-search-card__salary-info">₹10L - ₹15L</span>
-  <time datetime="2026-10-05">4 days ago</time>
-</div></li>
-<li><div class="base-card"><h3 class="base-search-card__title"></h3></div></li>`;
+describe('parseSearch (real fixture)', () => {
+    const { jobs, cards } = parseSearch(fixture('search'), query, input);
 
-describe('parseSearch', () => {
-    it('extracts basic jobs and skips broken cards', () => {
-        const jobs = parseSearch(SEARCH_HTML, query, input);
-        expect(jobs).toHaveLength(1);
-        expect(jobs[0]).toMatchObject({
-            id: 'linkedin:4012345678', title: 'React Developer', company: 'Acme',
-            url: 'https://in.linkedin.com/jobs/view/react-developer-at-acme-4012345678',
-            companyUrl: 'https://in.linkedin.com/company/acme', location: 'Bengaluru, Karnataka, India',
-            workType: 'remote', postedAt: '2026-10-05T00:00:00.000Z', salary: { min: 1000000, max: 1500000, currency: 'INR' },
-        });
+    it('parses every card on the page', () => {
+        expect(cards).toBe(10);
+        expect(jobs).toHaveLength(10);
+    });
+
+    it('fills every core field on every job', () => {
+        for (const job of jobs) {
+            expect(job.title).toBeTruthy();
+            expect(job.company).toBeTruthy();
+            expect(job.sourceJobId).toMatch(/^\d{6,}$/);
+            expect(job.url).toMatch(/^https:\/\/[a-z.]*linkedin\.com\/jobs\/view\//);
+            expect(job.companyUrl).toMatch(/^https:\/\//);
+            expect(job.location).toBeTruthy();
+            expect(job.postedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+            expect(job.id).toBe(`linkedin:${job.sourceJobId}`);
+        }
+    });
+
+    it('strips tracking params from URLs', () => {
+        for (const job of jobs) expect(job.url).not.toContain('?');
+    });
+
+    it('reads the listing badges', () => {
+        // Both are plain booleans: the badge is either shown or it is not.
+        expect(jobs.filter((j) => j.activelyHiring)).not.toHaveLength(0);
+        for (const job of jobs) {
+            expect(typeof job.activelyHiring).toBe('boolean');
+            expect(typeof job.earlyApplicant).toBe('boolean');
+        }
+    });
+
+    it('leaves work type null when neither the card nor the filter settles it', () => {
+        // Cards here say nothing about remote/hybrid. With no single work-type filter to lean on,
+        // the field must stay null rather than being guessed.
+        const noFilter = { ...input, workType: [] };
+        const { jobs: unfiltered } = parseSearch(fixture('search'), query, noFilter);
+        expect(unfiltered.every((j) => j.workType === null)).toBe(true);
+    });
+
+    it('trusts a single work-type filter, since LinkedIn applied it server-side', () => {
+        // input filters f_WT=remote, so every returned job really is remote.
+        expect(jobs.every((j) => j.workType === 'remote')).toBe(true);
     });
 });
 
-const DETAIL_HTML = `
-<div class="show-more-less-html__markup"><p>Build UIs.</p><ul><li>React</li><li>TypeScript</li></ul></div>
-<span class="num-applicants__caption">Over 200 applicants</span>
-<code id="applyUrl" style="display: none"><!--"https://www.linkedin.com/jobs/view/externalApply/4012345678?url=https%3A%2F%2Fcareers%2Eacme%2Ecom%2Fjobs%2F1&amp;urlHash=x"--></code>
-<ul class="description__job-criteria-list">
-  <li class="description__job-criteria-item"><h3 class="description__job-criteria-subheader">Seniority level</h3><span class="description__job-criteria-text">Entry level</span></li>
-  <li class="description__job-criteria-item"><h3 class="description__job-criteria-subheader">Employment type</h3><span class="description__job-criteria-text">Full-time</span></li>
-  <li class="description__job-criteria-item"><h3 class="description__job-criteria-subheader">Industries</h3><span class="description__job-criteria-text">Software Development</span></li>
-</ul>`;
+describe('parseDetail (real fixture)', () => {
+    const [job] = parseSearch(fixture('search'), query, input).jobs;
+    const full = parseDetail(fixture('detail'), job!);
 
-describe('parseDetail', () => {
-    it('merges detail fields', () => {
-        const [job] = parseSearch(SEARCH_HTML, query, input);
-        const full = parseDetail(DETAIL_HTML, job!);
-        expect(full).toMatchObject({
-            detailsFetched: true, applicants: 200, applyUrl: 'https://careers.acme.com/jobs/1', easyApply: false,
-            experienceLevel: 'Entry level', jobType: 'Full-time', industry: 'Software Development',
-        });
-        expect(full.description).toContain('• React');
+    it('extracts the description as text and HTML', () => {
+        expect(full.description!.length).toBeGreaterThan(500);
+        expect(full.description).toContain('• '); // bullets preserved
+        expect(full.description).not.toContain('<');
+        expect(full.descriptionHtml).toContain('<');
+        expect(full.detailsFetched).toBe(true);
+    });
+
+    it('extracts job criteria, skipping LinkedIn "Not Applicable" placeholders', () => {
+        expect(full.jobType).toBe('Full-time');
+        expect(full.industry).toBe('IT Services and IT Consulting');
+        expect(full.experienceLevel).toBeNull();
+    });
+
+    it('detects off-site apply as not Easy Apply', () => {
+        expect(full.easyApply).toBe(false);
+    });
+
+    it('recovers required experience from the description', () => {
+        expect(full.experienceYears).toEqual({ min: 1, max: 2 });
+    });
+
+    it('does not infer work type from perks mentioned in the description', () => {
+        // This posting states fixed office hours but mentions "remote working opportunities".
+        // Parsed with no work-type filter, the field must stay null instead of guessing "remote".
+        const [plain] = parseSearch(fixture('search'), query, { ...input, workType: [] }).jobs;
+        expect(parseDetail(fixture('detail'), plain!).workType).toBeNull();
+    });
+
+    it('reads the applicant count', () => {
+        expect(full.applicants).toBe(200);
+    });
+});
+
+describe('parseDetail (real US fixture with published pay)', () => {
+    const q = { keyword: 'software engineer', location: 'United States' };
+    const [job] = parseSearch(fixture('search-us'), q, input).jobs;
+    const full = parseDetail(fixture('detail-us'), job!);
+
+    it('parses the base pay range without repeating it in raw', () => {
+        expect(full.salary).toMatchObject({ min: 123_500, max: 150_000, currency: 'USD', period: 'year' });
+        expect(full.salary!.raw).toBe('$123,500.00/yr - $150,000.00/yr');
     });
 });

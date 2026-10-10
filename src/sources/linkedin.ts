@@ -1,7 +1,7 @@
 import { log } from 'apify';
 import * as cheerio from 'cheerio';
 import { BlockedError } from '../core/http.js';
-import { clean, cleanUrl, makeJob, parseCount, parseRelativeDate, parseSalary } from '../core/normalize.js';
+import { clean, cleanUrl, experienceFromText, makeJob, parseCount, parseRelativeDate, parseSalary } from '../core/normalize.js';
 import { forEachLimit, Semaphore } from '../core/pool.js';
 import type { Input, Job, SearchQuery, WorkType } from '../types.js';
 import type { Source, SourceContext } from './source.js';
@@ -48,11 +48,20 @@ function workTypeFromText(text: string | null): WorkType | null {
     return null;
 }
 
+export interface SearchPage {
+    jobs: Job[];
+    /** Cards seen in the fragment, including ones we could not parse. Pagination advances by this,
+     *  so one unparseable card never makes us skip the rest of the result set. */
+    cards: number;
+}
+
 /** Parse a search-results fragment into basic jobs. */
-export function parseSearch(html: string, query: SearchQuery, input: Input): Job[] {
+export function parseSearch(html: string, query: SearchQuery, input: Input): SearchPage {
     const $ = cheerio.load(html);
     const jobs: Job[] = [];
+    let cards = 0;
     $('li').each((_, li) => {
+        cards++;
         const card = $(li).find('.base-card, .job-search-card').first();
         const root = card.length ? card : $(li);
         const urn = root.attr('data-entity-urn') ?? $(li).find('[data-entity-urn]').attr('data-entity-urn') ?? '';
@@ -61,11 +70,14 @@ export function parseSearch(html: string, query: SearchQuery, input: Input): Job
         const title = clean(root.find('.base-search-card__title').text());
         if (!id || !title) return;
 
-        const location = clean(root.find('.job-search-card__location').text());
+        const location = clean(root.find('.job-search-card__location').text())
+            ?? clean(root.find('.base-search-card__metadata').text());
         const timeEl = root.find('time').first();
         const postedAtRaw = clean(timeEl.text());
         const datetime = timeEl.attr('datetime');
         const companyLink = root.find('.base-search-card__subtitle a').first();
+        // Real markup uses this badge for "Actively Hiring" / "Be an early applicant",
+        // not for Easy Apply. Easy Apply is only knowable from the detail page.
         const benefits = clean(root.find('.job-posting-benefits__text').text());
 
         jobs.push(makeJob({
@@ -77,16 +89,21 @@ export function parseSearch(html: string, query: SearchQuery, input: Input): Job
             companyUrl: cleanUrl(companyLink.attr('href')),
             companyLogo: root.find('img').attr('data-delayed-url') ?? null,
             location,
-            workType: input.workType.length === 1 ? input.workType[0]! : workTypeFromText(location),
-            salary: parseSalary(root.find('.job-search-card__salary-info').text()),
+            // Titles like "React Developer (Remote)" are the usual signal; the location field
+            // carries it less often. Fall back to the filter when the user asked for one work type.
+            workType: workTypeFromText(title) ?? workTypeFromText(location)
+                ?? (input.workType.length === 1 ? input.workType[0]! : null),
+            salary: parseSalary(root.find('.job-search-card__salary-info, .job-search-card__compensation').text()),
             postedAt: datetime ? new Date(datetime).toISOString() : parseRelativeDate(postedAtRaw),
             postedAtRaw,
-            easyApply: benefits ? /easy apply/i.test(benefits) || null : null,
+            // The badge is either shown or not, so absence is a real "no", not unknown.
+            activelyHiring: /actively hiring/i.test(benefits ?? ''),
+            earlyApplicant: /early applicant/i.test(benefits ?? ''),
             searchKeyword: query.keyword,
             searchLocation: query.location,
         }));
     });
-    return jobs;
+    return { jobs, cards };
 }
 
 /** Parse a job-detail fragment and merge it into the basic job. */
@@ -107,18 +124,31 @@ export function parseDetail(html: string, job: Job): Job {
     descEl.find('p, ul, ol').each((_, p) => { $(p).append('\n'); });
     const description = descEl.text().replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim() || null;
 
-    // The external apply URL is stored inside an HTML comment in <code id="applyUrl">.
-    const applyRaw = $('code#applyUrl').html()?.match(/"(https?:[^"]+)"/)?.[1] ?? null;
+    // Older markup put the external apply URL in an HTML comment inside <code id="applyUrl">.
+    // Current guest pages usually hide it behind a sign-in modal, so treat it as a bonus, not a given.
+    const applyRaw = $('code#applyUrl').html()?.match(/"(https?:[^"]+)"/)?.[1]
+        ?? $('a[href*="/jobs/view/externalApply/"]').attr('href')
+        ?? null;
     let applyUrl: string | null = null;
     if (applyRaw) {
         try {
-            const inner = new URL(applyRaw.replace(/&amp;/g, '&')).searchParams.get('url');
+            // The real destination is wrapped in LinkedIn's redirector as ?url=<encoded>.
+            const inner = new URL(applyRaw.replace(/&amp;/g, '&'), 'https://www.linkedin.com').searchParams.get('url');
             applyUrl = inner ?? applyRaw;
         } catch { applyUrl = applyRaw; }
     }
 
-    const applicantsText = clean($('.num-applicants__caption').text()) ?? clean($('figcaption.num-applicants__caption').text());
-    const salary = parseSalary($('.compensation__salary').text()) ?? job.salary;
+    // Whether applying leaves LinkedIn is still detectable: an off-site apply button carries this icon.
+    const hasApplyButton = $('.apply-button, [data-modal*="apply-modal"]').length > 0;
+    const offsite = /offsite-apply|apply-link-offsite/i.test(html);
+    const easyApply = offsite ? false : (hasApplyButton ? true : job.easyApply);
+
+    const applicantsText = clean($('.num-applicants__caption').text());
+    // These elements nest, so take one (the innermost is the tightest) rather than concatenating
+    // all matches, which would repeat the range in `raw`.
+    const salaryText = clean($('.compensation__salary').last().text())
+        ?? clean($('.compensation__salary-range').last().text());
+    const salary = parseSalary(stripSalaryLabel(salaryText)) ?? job.salary;
 
     return {
         ...job,
@@ -127,16 +157,35 @@ export function parseDetail(html: string, job: Job): Job {
         description,
         descriptionHtml,
         applyUrl,
-        easyApply: applyUrl ? false : job.easyApply,
-        applicants: parseCount(applicantsText),
+        easyApply,
+        applicants: parseCount(applicantsText) ?? job.applicants,
         salary,
-        experienceLevel: criteria['seniority level'] ?? null,
-        jobType: criteria['employment type'] ?? null,
-        jobFunction: criteria['job function'] ?? null,
-        industry: criteria['industries'] ?? null,
+        // Seniority is often "Not Applicable"; that is not information, so drop it.
+        experienceLevel: dropNotApplicable(criteria['seniority level']),
+        jobType: dropNotApplicable(criteria['employment type']),
+        jobFunction: dropNotApplicable(criteria['job function']),
+        industry: dropNotApplicable(criteria['industries']),
+        // Descriptions almost always state the required experience even though LinkedIn has no field for it.
+        experienceYears: job.experienceYears ?? experienceFromText(description),
+        // Deliberately NOT inferred from the description: real postings advertise "remote working
+        // opportunities" as a perk while stating fixed office hours, so that guess is often wrong.
+        workType: job.workType ?? workTypeFromText(criteria['remote'] ?? null),
         postedAtRaw: job.postedAtRaw ?? clean($('.posted-time-ago__text').text()),
         detailsFetched: description != null,
     };
+}
+
+/** Drop LinkedIn's "Base pay range" heading and any doubled-up repetition of the range itself. */
+function stripSalaryLabel(text: string | null): string | null {
+    if (!text) return null;
+    const out = text.replace(/^\s*(base pay range|base salary|compensation)\s*:?\s*/i, '').trim();
+    const half = out.slice(0, Math.floor(out.length / 2)).trim();
+    return half && half === out.slice(Math.ceil(out.length / 2)).trim() ? half : out;
+}
+
+function dropNotApplicable(value: string | undefined): string | null {
+    const v = clean(value);
+    return !v || /^not applicable$/i.test(v) ? null : v;
 }
 
 export const linkedin: Source = {
@@ -162,9 +211,10 @@ export const linkedin: Source = {
             let emptyPages = 0;
             for (let start = 0; start < MAX_START && !sink.isFull('linkedin'); ) {
                 const res = await http.fetch(buildSearchUrl(input, query, start));
-                const jobs = parseSearch(res.body, query, input);
-                if (!jobs.length) break;
-                start += jobs.length;
+                const { jobs, cards } = parseSearch(res.body, query, input);
+                // No cards at all means we have run past the end of this query's results.
+                if (!cards) break;
+                start += cards;
 
                 let fresh = 0;
                 for (const job of jobs) {

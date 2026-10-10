@@ -8,14 +8,18 @@
             "type": "array",
             "description": "What to search for. Each keyword is searched in every location.",
             "editor": "stringList",
-            "prefill": ["react developer"]
+            "prefill": [
+                "react developer"
+            ]
         },
         "locations": {
             "title": "Locations",
             "type": "array",
             "description": "Cities or countries, e.g. \"Bangalore\", \"India\", \"Remote\". Leave empty to search worldwide.",
             "editor": "stringList",
-            "prefill": ["India"],
+            "prefill": [
+                "India"
+            ],
             "default": []
         },
         "sources": {
@@ -25,10 +29,22 @@
             "editor": "select",
             "items": {
                 "type": "string",
-                "enum": ["linkedin", "naukri", "glassdoor"],
-                "enumTitles": ["LinkedIn", "Naukri", "Glassdoor"]
+                "enum": [
+                    "linkedin",
+                    "naukri",
+                    "glassdoor"
+                ],
+                "enumTitles": [
+                    "LinkedIn",
+                    "Naukri",
+                    "Glassdoor"
+                ]
             },
-            "default": ["linkedin", "naukri", "glassdoor"]
+            "default": [
+                "linkedin",
+                "naukri",
+                "glassdoor"
+            ]
         },
         "maxItemsPerSource": {
             "title": "Max jobs per site",
@@ -43,16 +59,40 @@
             "title": "Posted within",
             "type": "string",
             "editor": "select",
-            "enum": ["24h", "week", "month", "any"],
-            "enumTitles": ["Last 24 hours", "Last week", "Last month", "Any time"],
-            "default": "any"
+            "enum": [
+                "24h",
+                "week",
+                "month",
+                "any"
+            ],
+            "enumTitles": [
+                "Last 24 hours",
+                "Last week",
+                "Last month",
+                "Any time"
+            ],
+            "default": "any",
+            "description": "Only return jobs posted within this period. Narrower periods are faster and cheaper."
         },
         "workType": {
             "title": "Work type",
             "type": "array",
             "editor": "select",
-            "items": { "type": "string", "enum": ["onsite", "remote", "hybrid"], "enumTitles": ["On-site", "Remote", "Hybrid"] },
-            "default": []
+            "items": {
+                "type": "string",
+                "enum": [
+                    "onsite",
+                    "remote",
+                    "hybrid"
+                ],
+                "enumTitles": [
+                    "On-site",
+                    "Remote",
+                    "Hybrid"
+                ]
+            },
+            "default": [],
+            "description": "Filter by remote / hybrid / on-site. Leave empty for all."
         },
         "jobType": {
             "title": "Job type",
@@ -60,10 +100,23 @@
             "editor": "select",
             "items": {
                 "type": "string",
-                "enum": ["full-time", "part-time", "contract", "temporary", "internship"],
-                "enumTitles": ["Full-time", "Part-time", "Contract", "Temporary", "Internship"]
+                "enum": [
+                    "full-time",
+                    "part-time",
+                    "contract",
+                    "temporary",
+                    "internship"
+                ],
+                "enumTitles": [
+                    "Full-time",
+                    "Part-time",
+                    "Contract",
+                    "Temporary",
+                    "Internship"
+                ]
             },
-            "default": []
+            "default": [],
+            "description": "Filter by employment type. Leave empty for all."
         },
         "experienceLevel": {
             "title": "Experience level",
@@ -71,10 +124,25 @@
             "editor": "select",
             "items": {
                 "type": "string",
-                "enum": ["internship", "entry", "associate", "mid-senior", "director", "executive"],
-                "enumTitles": ["Internship", "Entry level", "Associate", "Mid-Senior", "Director", "Executive"]
+                "enum": [
+                    "internship",
+                    "entry",
+                    "associate",
+                    "mid-senior",
+                    "director",
+                    "executive"
+                ],
+                "enumTitles": [
+                    "Internship",
+                    "Entry level",
+                    "Associate",
+                    "Mid-Senior",
+                    "Director",
+                    "Executive"
+                ]
             },
-            "default": []
+            "default": [],
+            "description": "Filter by seniority. Leave empty for all."
         },
         "fetchDetails": {
             "title": "Get full job details",
@@ -106,10 +174,16 @@
             "type": "object",
             "editor": "proxy",
             "description": "Apify Proxy is recommended. The default works for most searches.",
-            "prefill": { "useApifyProxy": true },
-            "default": { "useApifyProxy": true },
+            "prefill": {
+                "useApifyProxy": true
+            },
+            "default": {
+                "useApifyProxy": true
+            },
             "sectionCaption": "Advanced"
         }
     },
-    "required": ["keywords"]
+    "required": [
+        "keywords"
+    ]
 }

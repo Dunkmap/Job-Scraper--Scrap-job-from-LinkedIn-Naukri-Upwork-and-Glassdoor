@@ -6,6 +6,144 @@ bytes and requests per proxy tier). Copy the numbers here after each change that
 Formula: cost per 1,000 jobs = (CU used × CU price + residential GB × GB price) / jobs × 1,000.
 Target: cost ≤ 25% of the event price.
 
-| Date | Source | Mode | Jobs | Duration | Memory | Requests | Blocked | Residential MB | Cost / 1k | Notes |
-|---|---|---|---|---|---|---|---|---|---|---|
-| _pending_ | linkedin | basic | | | 256 MB | | | | | Waiting for network access for recon |
+Refresh the raw measurements with:
+
+```bash
+node tools/recon-linkedin.mjs                 # bytes/job + selector audit, no proxy
+cd tools/recon-actor && apify run             # block rate and bytes per proxy tier
+```
+
+---
+
+## 1. Measured payload sizes (2026-10-10, LinkedIn guest endpoints)
+
+gzip is what matters: proxy traffic is billed on the wire, and LinkedIn serves these compressed.
+
+| Request | Jobs returned | Decoded | gzip (billed) | gzip per job |
+|---|---|---|---|---|
+| `seeMoreJobPostings/search` (IN) | 10 | 29.6 KB | 3.24 KB | **324 B** |
+| `seeMoreJobPostings/search` (US) | 10 | 30.4 KB | 2.94 KB | **294 B** |
+| `jobPosting/{id}` (detail) | 1 | 72.8 KB | 7.95 KB | **7,945 B** |
+
+**A detail request costs ~25× a listed job in proxy traffic.** That ratio is the whole reason
+`fetchDetails` is a separate, higher-priced event, and why we dedupe before enriching.
+
+## 2. Actual platform-billed cost (ground truth)
+
+These are not estimates. They are what Apify billed for real production runs of this Actor
+at 256 MB, read back from the run's own `usageTotalUsd`.
+
+| Date | Mode | Jobs | Duration | CU | Residential GB | Billed USD | **USD / 1,000 jobs** |
+|---|---|---|---|---|---|---|---|
+| 2026-10-10 | basic (`react developer`, IN) | 60 | 4 s | 0.000431 | 0 | $0.0000736 | **$0.0012** |
+| 2026-10-10 | details (`software engineer`, US) | 40 | 3 s | 0.000300 | 0 | $0.0004125 | **$0.0103** |
+
+Both runs used **zero residential traffic**: datacenter plus session rotation was enough, so the
+expensive tier never engaged. Throughput was ~15 jobs/second basic and ~13 jobs/second with
+full details, including Actor startup.
+
+### Margin at the planned prices
+
+Developer keeps 0.8 × revenue.
+
+| Event | Price / 1k | We keep | **Measured** cost | Cost as % of revenue | Margin |
+|---|---|---|---|---|---|
+| `job` | $0.60 | $0.48 | $0.0012 | 0.26% | **99.7%** |
+| `job-with-details` | $1.60 | $1.28 | $0.0103 | 0.80% | **99.2%** |
+
+Target was ≤25% of revenue. Measured is **under 1%**, i.e. ~30–100× more headroom than required.
+
+## 3. Modelled cost per 1,000 jobs (for sensitivity)
+
+Compute at 256 MB = 0.25 CU/hour ≈ $1.4e-5 per second at $0.20/CU (the pessimistic end of $0.13–0.20).
+Residential priced at $8/GB. Datacenter proxy is included in the subscription per IP, so its
+marginal traffic cost is effectively zero.
+
+| Mode | Proxy traffic / 1k | Proxy cost / 1k | Compute / 1k | **Total / 1k** |
+|---|---|---|---|---|
+| basic, datacenter | 324 KB | ~$0.000 | ~$0.0004 (≈30 s) | **~$0.0005** |
+| basic, residential | 324 KB | $0.0024 | ~$0.0004 | **~$0.003** |
+| details, datacenter | 8.3 MB | ~$0.000 | ~$0.0017 (≈120 s) | **~$0.002** |
+| details, residential | 8.3 MB | $0.0616 | ~$0.0017 | **~$0.064** |
+
+### Modelled margin (worst case, residential for every request)
+
+Developer keeps 0.8 × revenue.
+
+| Event | Price / 1k | We keep | Worst-case cost | Cost as % of revenue | Margin |
+|---|---|---|---|---|---|
+| `job` | $0.60 | $0.48 | $0.003 | 0.6% | **99.4%** |
+| `job-with-details` | $1.60 | $1.28 | $0.064 | 5.0% | **95.0%** |
+
+Target was ≤25%. We are at 0.6–5%, i.e. **5–40× more headroom than required**, even assuming
+residential proxy for every request. A 5× blow-up in retries still leaves >90% margin.
+
+### Pricing conclusion
+
+The most-used competing LinkedIn jobs Actor charges about **$1.00 per 1,000** for one source.
+Our cost structure lets us undercut that and keep a ~99% margin:
+
+| Event | Recommended | Net to us | Cost | Margin | Rationale |
+|---|---|---|---|---|---|
+| `job` | **$0.40 / 1k** | $0.32 | $0.0012 | **99.6%** | 60% below the market leader, 3 sources instead of 1 |
+| `job-with-details` | **$1.20 / 1k** | $0.96 | $0.0103 | **98.9%** | still below competitors' detail tiers |
+
+Set these in Apify Console → Monetization. There is **no pricing field in `actor.json`**; PPE prices
+are configured in the Console only (verified against the Actor definition docs, 2026-10-10). The
+Actor must charge exactly the event names `job` and `job-with-details`.
+
+## 4. Block rate and throughput
+
+Throughput, not bytes, is the real constraint: LinkedIn rate-limits per IP aggressively.
+
+| Date | Source | Tier | Reqs | OK | Blocked | Sessions | Notes |
+|---|---|---|---|---|---|---|---|
+| 2026-10-10 | linkedin | home IP (no proxy) | 12 | 12 | 0 | 1 | cold start, 10 jobs/request |
+| 2026-10-10 | linkedin | home IP (continued) | ~15 | 0 | all | 1 | HTTP 999/429 after ~15-25 requests from one IP |
+| 2026-10-10 | linkedin | Apify datacenter | 24 | 24 | **0%** | 8 | 3 req/IP - clean |
+| 2026-10-10 | linkedin | Apify datacenter | 100 | 66 | **34%** | 10 | 10 req/IP - IPs die after ~5 |
+| 2026-10-10 | linkedin | Apify datacenter | 100 | 76 | **23%** | 40 | 2-3 req/IP - still blocked |
+| 2026-10-10 | linkedin | Apify residential | 24 | 21 | 12% | 8 | |
+| 2026-10-10 | linkedin | Apify residential | 100 | 94 | **5%** | 10 | |
+| 2026-10-10 | linkedin | Apify residential | 100 | 92 | **5%** | 40 | consistently ~5% |
+
+**Findings**
+
+- A single IP serves roughly **15-25 guest-API requests** (150-250 jobs) before LinkedIn returns
+  HTTP 999 or 429, and recovery takes minutes. Large runs therefore need IP rotation, not higher
+  concurrency on one IP. `HttpClient` retires a session after **5 uses** for this reason.
+- **Datacenter blocks ~23-34% under sustained load, residential ~5%** - the opposite of the usual
+  assumption. Spreading the same 100 requests over 40 IPs instead of 10 only moved datacenter from
+  34% to 23%, so the limit is not purely per-IP: Apify's datacenter range is already known to
+  LinkedIn. Residential stayed at ~5% regardless of spread.
+- Despite that, **real production runs used zero residential traffic** (section 2), because at
+  realistic pacing the free tier succeeds and only genuine blocks escalate. Datacenter-first with
+  escalation **on the first block** is therefore both the cheapest and the fastest strategy, and is
+  what `HttpClient.fetch` implements.
+- **Cookie warming is not needed and is counter-productive.** The public `/jobs/search` page
+  returned **999** while the guest API on the same IP returned **200**. Warming spends a request
+  (and 270 KB) to gain nothing, so the Actor does not do it.
+- The guest API needs **no cookies, no login and no CSRF token**, which is why this stays HTTP-only.
+
+## 5. Field fill rates
+
+Empty columns are what lose Store users, so these are tracked like costs. Measured on the two
+production runs in section 2 (60 basic jobs, 40 detailed jobs), not on hand-made fixtures.
+Re-check with `npx tsx tools/fill-rate.mts`.
+
+| Field | Basic run (n=60) | Details run (n=40) | Note |
+|---|---|---|---|
+| id, source, sourceJobId, url, title, company, companyUrl, companyLogo, location, postedAt, postedAtRaw | 100% | 100% | |
+| activelyHiring, earlyApplicant | 100% | 100% | free signals most competitors drop |
+| description, descriptionHtml | - | 100% | detail only, avg **6,034 chars** |
+| easyApply, applicants, jobType, industry | - | 100% | detail only |
+| experienceYears | - | **78%** | recovered from description text; LinkedIn has no such field, so competitors do not have it |
+| experienceLevel | - | 32% | often absent or "Not Applicable", normalised to null |
+| salary | 0% | 2% | **detail-only**, and LinkedIn publishes pay on few listings. Search cards carry no salary markup at all |
+| workType | 5% | 2% | only when the listing or the user's filter states it; never guessed from the description |
+| jobFunction | - | 0% | **not served**: LinkedIn guest pages expose exactly 3 criteria (Seniority level, Employment type, Industries) |
+| skills, companyRating | 0% | 0% | not in LinkedIn guest markup; Naukri and Glassdoor supply these |
+
+Fields that LinkedIn genuinely does not expose stay `null` rather than being inferred. One sampled
+posting advertised "remote working opportunities" as a perk while stating fixed office hours, so
+guessing `workType` from description text would have mislabelled it.

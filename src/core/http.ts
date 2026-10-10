@@ -86,9 +86,11 @@ export class HttpClient {
 
     private async getSession(tier: ProxyTier): Promise<Session> {
         const pool = this.pools[tier];
-        const maxUses = this.opts.maxSessionUses ?? 50;
+        // Measured: a LinkedIn guest IP serves only a handful of requests before it starts
+        // returning 999/429, so sessions are retired early and replaced with a fresh IP.
+        const maxUses = this.opts.maxSessionUses ?? 5;
         for (const s of pool.filter((x) => x.uses >= maxUses)) this.retire(s);
-        if (pool.length < (this.opts.poolSize ?? 5)) {
+        if (pool.length < (this.opts.poolSize ?? 12)) {
             const fresh = await this.newSession(tier);
             pool.push(fresh);
             return fresh;
@@ -110,9 +112,16 @@ export class HttpClient {
     async fetch(url: string, init: RequestInit = {}): Promise<FetchResult> {
         const maxRetries = this.opts.maxRetries ?? 3;
         let lastError: unknown;
+        let wasBlocked = false;
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            // Escalate to residential only for the last attempt(s), and only if configured.
-            const tier: ProxyTier = this.opts.residentialProxy && attempt >= maxRetries - 1 && attempt > 0 ? 'residential' : 'user';
+            /*
+             * Escalate on the FIRST block, not on the last attempt.
+             * Measured on LinkedIn (docs/cost-benchmarks.md): Apify datacenter IPs are blocked on
+             * ~25% of requests, residential on ~5%. Retrying a block on datacenter mostly buys
+             * another block, so once we have seen one we switch. A plain network error is not a
+             * block, so that stays on the free tier.
+             */
+            const tier: ProxyTier = this.opts.residentialProxy && wasBlocked ? 'residential' : 'user';
             const session = await this.getSession(tier);
             session.uses++;
             this.stats.requests++;
@@ -127,6 +136,7 @@ export class HttpClient {
                 if (result.status === 429 || result.status === 403 || result.status === 999 || this.opts.isBlocked?.(result)) {
                     this.stats.blocked++;
                     this.retire(session);
+                    wasBlocked = true;
                     throw new BlockedError(`Blocked (${result.status}) on ${tier} proxy: ${url}`);
                 }
                 if (result.status >= 500) throw new Error(`HTTP ${result.status}: ${url}`);
@@ -135,8 +145,9 @@ export class HttpClient {
                 lastError = err;
                 this.stats.failures++;
                 this.retire(session);
-                // Exponential backoff with jitter: 0.5s, 1s, 2s ...
-                await sleep(500 * 2 ** attempt + Math.random() * 300);
+                // Exponential backoff with jitter: 0.5s, 1s, 2s ... but never after the last
+                // attempt, where the wait is billed wall-clock that buys nothing.
+                if (attempt < maxRetries) await sleep(500 * 2 ** attempt + Math.random() * 300);
             }
         }
         throw lastError;

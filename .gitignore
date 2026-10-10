@@ -3,3 +3,6 @@ dist
 storage
 apify_storage
 .env
+tools/recon-actor/storage
+tools/recon-actor/node_modules
+.sf

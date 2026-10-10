@@ -1,0 +1,11 @@
+{
+    "actorSpecification": 1,
+    "name": "job-scraper-recon",
+    "title": "Job Scraper recon",
+    "description": "Internal: measures block rate, bytes per job and safe concurrency per source, and captures fixtures.",
+    "version": "0.1",
+    "buildTag": "latest",
+    "defaultMemoryMbytes": 512,
+    "input": "./input_schema.json",
+    "dockerfile": "./Dockerfile"
+}
