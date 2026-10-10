@@ -7,7 +7,7 @@
     "buildTag": "latest",
     "minMemoryMbytes": 256,
     "maxMemoryMbytes": 2048,
-    "defaultMemoryMbytes": 512,
+    "defaultMemoryMbytes": 256,
     "input": "./input_schema.json",
     "storages": {
         "dataset": "./dataset_schema.json"

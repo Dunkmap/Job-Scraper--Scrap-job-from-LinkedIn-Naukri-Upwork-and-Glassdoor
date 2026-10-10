@@ -25,6 +25,10 @@ LinkedIn's public pages never expose, and LinkedIn supplies volume and full desc
 - **LinkedIn salary is detail-only** and rarely published outside the US; search cards carry no
   salary markup at all. Turn on `fetchDetails` to get it where it exists.
 - Glassdoor requires a residential proxy; LinkedIn runs fine on datacenter.
+- **One LinkedIn query returns ~854-868 unique jobs** before its ~1,000 cap. Use several keywords
+  or locations for more; query splitting is not implemented yet.
+- Turn memory up to **512 MB when using `fetchDetails`** - it is 2.1x faster than 256 MB for 17%
+  more cost. Basic runs are cheapest at the 256 MB default.
 - Fields a site genuinely does not expose are returned as `null`, never guessed.
 
 ## Pricing (pay-per-event)
@@ -37,8 +41,11 @@ exactly two event names:
 | `job` | a job is stored with basic fields | $0.40 / 1,000 |
 | `job-with-details` | a job is stored with the full description and criteria | $1.20 / 1,000 |
 
-Measured platform cost is **$0.0012 per 1,000** LinkedIn basic jobs and **$0.0206 per 1,000** for a
-mixed LinkedIn + Glassdoor run, i.e. well under 1% of revenue.
+Measured platform cost at scale (854 and 500-job runs, read after usage settled):
+**$0.0075 per 1,000** basic jobs and **$0.0295 per 1,000** with full details - about 2-3% of
+revenue, so roughly a 97% margin. See `docs/cost-benchmarks.md` §8.
+
+Throughput: ~854 jobs in 87 s basic (256 MB), or 500 fully-detailed jobs in 98 s (512 MB).
 
 ## Develop
 

@@ -270,3 +270,68 @@ the product's main selling point over single-source competitors:
 Glassdoor costs ~$0.046 per 1,000 jobs against LinkedIn's $0.0012 (residential, and ~175 KB gzip
 per 30-job page), so it is ~38x more expensive per job while supplying the richer fields. Both stay
 far inside the margin target.
+
+---
+
+## 8. Scale test: 1,000 jobs, measured end to end (2026-10-10)
+
+### Correction to sections 2-3
+
+**Apify's `usageTotalUsd` lags for several minutes after a run finishes.** The figures first
+recorded in section 2 were read immediately and were too low by ~6x: the 60-job run read
+$0.0000736 at the time and settled at **$0.00050**. Every number below was re-read after
+settling, and re-read twice to confirm it had stopped moving. Treat sections 2-3 as superseded
+by this section.
+
+### Results
+
+| Mode | Memory | Jobs | Duration | Billed | **USD / 1,000** | CU | Residential |
+|---|---|---|---|---|---|---|---|
+| basic | 256 MB | 854 | 87 s | $0.006431 | **$0.0075** | 0.0061 | 0.09 MB |
+| basic | 512 MB | 868 | 83 s | $0.007215 | $0.0083 | 0.0116 | 0.05 MB |
+| details | 256 MB | 500 | 210 s | $0.012618 | **$0.0252** | 0.0146 | 0.82 MB |
+| details | 512 MB | 500 | 98 s | $0.014734 | $0.0295 | 0.0136 | 1.11 MB |
+| details | 1024 MB | 500 | 58 s | $0.021705 | $0.0434 | 0.0162 | 1.93 MB |
+
+One LinkedIn query yields about **854-868 unique jobs** before the ~1,000 cap bites (146 and 132
+of the results were repeats). Getting past that needs query splitting by time window or location.
+
+### What actually drives the cost
+
+For a basic run the proxy is nearly free (0.09 MB residential across 854 jobs) and the bill is
+dominated by **dataset writes plus compute**, not traffic. Dataset writes are billed per item, so
+batching does not reduce them: there is a hard floor of roughly $0.005 per 1,000 jobs just for
+storing results. That is the opposite of the assumption in PLAN.md that proxy traffic would be our
+largest cost - true only for Glassdoor.
+
+### Memory
+
+Memory only matters for `fetchDetails`:
+
+- **basic: 256 MB.** 512 MB is 4 s faster over 854 jobs and 10% dearer - not worth it.
+- **details: 512 MB.** 2.1x faster than 256 MB for 17% more. 1024 MB is 3.6x faster but 72%
+  dearer, and the extra speed also raises the block rate, which is why residential traffic climbs
+  from 0.82 MB to 1.93 MB across the three runs.
+
+`defaultMemoryMbytes` stays 256 because `fetchDetails` defaults to false; the input schema tells
+users to raise it when they turn details on. `maxMemoryMbytes` is now 2048 so they can.
+
+### Margin at the recommended prices (settled figures)
+
+| Event | Price / 1k | We keep | Measured cost | Cost as % of revenue | Margin |
+|---|---|---|---|---|---|
+| `job` | $0.40 | $0.32 | $0.0075 | 2.3% | **97.7%** |
+| `job-with-details` | $1.20 | $0.96 | $0.0295 | 3.1% | **96.9%** |
+
+Still far inside the 25% target, and the conclusion of section 3 is unchanged: we can undercut the
+~$1.00/1k market leader and keep ~97%.
+
+### Quality at scale (500 detailed jobs)
+
+500/500 enriched, 500/500 unique ids. description 100% (avg 3,173 chars, max 10,412),
+applicants 100%, easyApply 100%, jobType 100%, industry 100%, experienceYears 77%,
+experienceLevel 36%, salary 9% (Indian listings rarely publish pay), workType 8%.
+
+Block rate at this pace was **5/105 requests (4.8%)** on datacenter, and all 5 escalated to
+residential and succeeded - the proxy ladder behaving as designed, against the 23-34% measured
+under deliberately aggressive concurrency in section 4.
