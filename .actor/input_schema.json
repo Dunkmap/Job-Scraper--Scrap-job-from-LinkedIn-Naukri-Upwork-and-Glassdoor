@@ -144,7 +144,7 @@
         "fetchDetails": {
             "title": "Get full job details",
             "type": "boolean",
-            "description": "Adds the full description, apply link, applicant count, seniority, industry and more. Priced as a detailed job.",
+            "description": "Adds the full description, apply link, applicant count, seniority, industry and more. Priced as a detailed job. Tip: run with 512 MB or more - at 256 MB a 500-job detailed run takes about 3.5x longer for no saving.",
             "default": false,
             "sectionCaption": "Output options"
         },
