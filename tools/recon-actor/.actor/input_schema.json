@@ -10,7 +10,8 @@
             "enum": [
                 "linkedin",
                 "naukri",
-                "glassdoor"
+                "glassdoor",
+                "naukri-probe"
             ],
             "default": "linkedin",
             "description": "Which site to probe."

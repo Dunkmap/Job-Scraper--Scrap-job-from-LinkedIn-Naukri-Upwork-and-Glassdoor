@@ -53,7 +53,7 @@ const TARGETS = {
         step: 30,
     },
 };
-const T = TARGETS[source];
+const T = TARGETS[source] ?? TARGETS.naukri;
 
 /** One sticky proxy session = one IP, with its own cookie jar. */
 async function makeSession(tier, n) {
@@ -104,6 +104,56 @@ async function hit(session, url, label) {
             body: '',
         };
     }
+}
+
+/*
+ * Naukri returns HTTP 406 to its own JSON API even from a residential IP that just loaded the
+ * homepage successfully, so cookies alone are not the gate. This probe walks header and endpoint
+ * variants on one warmed session and reports which combination returns real data, including the
+ * plain HTML search page as a no-API fallback.
+ */
+if (source === 'naukri-probe') {
+    const s = await makeSession('residential', 0);
+    const home = await s.impit.fetch('https://www.naukri.com/');
+    log.info(`homepage: ${home.status} (${Buffer.from(await home.bytes()).byteLength}B)`);
+
+    const kw = keywords.replace(/\s+/g, '-');
+    const loc = location.replace(/\s+/g, '-');
+    const apiV3 = `https://www.naukri.com/jobapi/v3/search?${new URLSearchParams({
+        noOfResults: '20', urlType: 'search_by_key_loc', searchType: 'adv', keyword: keywords, location,
+        pageNo: '1', k: keywords, l: location, seoKey: `${kw}-jobs-in-${loc}`, src: 'jobsearchDesk', latLong: '',
+    })}`;
+    const htmlUrl = `https://www.naukri.com/${kw}-jobs-in-${loc}`;
+
+    const base = { appid: '109', systemid: 'Naukri' };
+    const variants = [
+        ['api: appid+systemid', apiV3, base],
+        ['api: systemid=109', apiV3, { appid: '109', systemid: '109' }],
+        ['api: +json accept', apiV3, { ...base, accept: 'application/json' }],
+        ['api: +referer+xhr', apiV3, { ...base, accept: 'application/json', referer: htmlUrl, 'x-requested-with': 'XMLHttpRequest' }],
+        ['api: +clientid', apiV3, { ...base, accept: 'application/json', referer: htmlUrl, clientid: 'd3skt0p' }],
+        ['api: no custom headers', apiV3, {}],
+        ['html search page', htmlUrl, { accept: 'text/html' }],
+    ];
+
+    for (const [label, url, headers] of variants) {
+        try {
+            const res = await s.impit.fetch(url, { headers });
+            const buf = Buffer.from(await res.bytes());
+            const body = buf.toString('utf8');
+            let found = 0;
+            try { found = (JSON.parse(body).jobDetails ?? []).length; } catch { /* html */ }
+            // The HTML page embeds the same job data as JSON in a __NEXT_DATA__/window blob.
+            const embedded = /__NEXT_DATA__|window\.__INITIAL|"jobDetails"|"jobId"/.test(body);
+            log.info(`${label.padEnd(24)} ${res.status}  ${String(buf.byteLength).padStart(7)}B  jobs=${found}  embeddedJson=${embedded}  ${body.slice(0, 90).replace(/\s+/g, ' ')}`);
+            if (res.status === 200) {
+                await Actor.setValue(`NAUKRI_${label.replace(/\W+/g, '_')}`, body, { contentType: 'text/plain; charset=utf-8' });
+            }
+        } catch (err) {
+            log.info(`${label.padEnd(24)} ERROR ${err.message.slice(0, 80)}`);
+        }
+    }
+    await Actor.exit();
 }
 
 const records = [];

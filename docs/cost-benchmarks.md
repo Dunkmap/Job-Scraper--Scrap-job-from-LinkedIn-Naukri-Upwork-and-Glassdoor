@@ -147,3 +147,50 @@ Re-check with `npx tsx tools/fill-rate.mts`.
 Fields that LinkedIn genuinely does not expose stay `null` rather than being inferred. One sampled
 posting advertised "remote working opportunities" as a perk while stating fixed office hours, so
 guessing `workType` from description text would have mislabelled it.
+
+---
+
+## 6. Source viability (2026-10-10, measured on the Apify platform)
+
+| Source | Datacenter | Residential | gzip / job | Verdict |
+|---|---|---|---|---|
+| **LinkedIn** | works (23-34% blocked under load) | works (~5% blocked) | **324 B** basic, 7.9 KB detail | **Shipping.** Cheapest source by far |
+| **Glassdoor** | **100% blocked** (3/3) | **works, 3/3 OK, 90 jobs** | **5,844 B** | **Viable, residential-only** |
+| **Naukri** | n/a | homepage 200, API **406** | - | **Blocked without a browser** |
+
+### Naukri: why it is blocked
+
+`jobapi/v3/search` answers every request with:
+
+```json
+{"message":"recaptcha required","statusCode":406,"validationErrors":[],"data":null}
+```
+
+This was reproduced from a residential Indian IP on a session that had just loaded the homepage
+successfully (200, 14 KB), across **six** header/endpoint variants: `appid`+`systemid`,
+`systemid=109`, `accept: application/json`, `+referer`+`x-requested-with`, `+clientid`, and no
+custom headers at all. The gate is not cookies and not headers.
+
+The HTML search page is not an alternative: it returns 200 / 36 KB but is a **Next.js App Router
+shell with zero job data** — 0 bytes of visible text, and its 11 `__next_f` RSC flight chunks
+contain only CSS and asset preloads. Listings are fetched client-side from the gated API.
+
+So Naukri needs one of:
+
+1. **A browser step** to mint a reCAPTCHA token / cookies, then reuse them for cheap HTTP API
+   calls. A browser needs 2-4 GB vs our 256 MB, so it is 8-16× compute **while it runs**; it is
+   only economic if one token serves many requests. Unverified — needs a spike.
+2. An unblocking service (extra per-request cost).
+3. **Dropping Naukri**, as the plan already dropped Upwork.
+
+### Glassdoor: cost note
+
+Glassdoor's search HTML is heavy — ~940 KB decoded (175 KB gzip) per 30-job page, i.e. **5,844 B
+gzip per job, 18× LinkedIn's 324 B**. Residential is mandatory (datacenter is 100% blocked), so
+this traffic is billed at ~$8/GB:
+
+- **~$0.047 per 1,000 jobs** — about 10% of revenue at $0.60/1k, vs 0.26% for LinkedIn.
+
+Still profitable, but it makes Glassdoor ~40× more expensive per job than LinkedIn. Moving to the
+GraphQL endpoint (as planned) should cut this substantially and is the first optimisation to make
+once Glassdoor ships.
