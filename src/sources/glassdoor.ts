@@ -294,9 +294,11 @@ export const glassdoor: Source = {
                 if (!rows.length) break;
 
                 let fresh = 0;
+                let unmapped = 0;
+                let filtered = 0;
                 for (const row of rows) {
                     const job = mapListing(row, query);
-                    if (!job) continue;
+                    if (!job) { unmapped++; continue; }
                     /*
                      * Glassdoor's own filter params for age, work type and job type are not
                      * verified, and sending a wrong one silently returns the wrong result set.
@@ -304,15 +306,25 @@ export const glassdoor: Source = {
                      */
                     if (maxAgeDays != null && job.postedAtRaw) {
                         const age = Number.parseInt(job.postedAtRaw, 10);
-                        if (Number.isFinite(age) && age > maxAgeDays) continue;
+                        if (Number.isFinite(age) && age > maxAgeDays) { filtered++; continue; }
                     }
-                    if (wantWork.size && (!job.workType || !wantWork.has(job.workType))) continue;
-                    if (wantType.size && (!job.jobType || !wantType.has(job.jobType as JobType))) continue;
+                    if (wantWork.size && (!job.workType || !wantWork.has(job.workType))) { filtered++; continue; }
+                    if (wantType.size && (!job.jobType || !wantType.has(job.jobType as JobType))) { filtered++; continue; }
 
                     if (!sink.claim(job)) continue;
                     fresh++;
                     await sink.push(job);
                 }
+                /*
+                 * Say where the page's 30 listings went. Glassdoor pads results with listings that
+                 * repeat across its own result set, so "30 on the page" rarely means 30 new jobs,
+                 * and without this line the shortfall looks like a scraper bug.
+                 */
+                log.info(`Glassdoor "${query.keyword}" in "${query.location}": ${rows.length} listings on page ${page}`
+                    + ` -> ${fresh} new`
+                    + `${filtered ? `, ${filtered} filtered out by your options` : ''}`
+                    + `${unmapped ? `, ${unmapped} unusable` : ''}`
+                    + `${rows.length - fresh - filtered - unmapped ? `, ${rows.length - fresh - filtered - unmapped} already seen` : ''}`);
                 if (!fresh) break;
             }
         }, (err, query) => {
