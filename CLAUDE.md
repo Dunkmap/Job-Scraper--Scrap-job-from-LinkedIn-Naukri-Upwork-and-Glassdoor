@@ -22,3 +22,4 @@ Research every detail (endpoints, payload sizes, proxy needs). Measure, don't gu
 - Never fetch a detail page for a job that's already been seen (dedupe first, then enrich).
 - Respect `maxItems` and the user's max-charge limit (`eventChargeLimitReached`). Stop the moment they're hit.
 - Track cost per 1,000 results for every source in `docs/cost-benchmarks.md` after each change that affects it.
+- Keep replies to the owner short: result first, few lines, no long explanations unless asked.
